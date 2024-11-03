@@ -1,0 +1,118 @@
+import time
+import requests
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from solana.rpc.api import Client
+from solana.publickey import PublicKey
+from solana.transaction import Transaction
+from solana.account import Account
+import os
+
+def get_env_variable(var_name, default=None):
+    value = os.getenv(var_name)
+    if value is None and default is not None:
+        return default
+    elif value is None:
+        raise EnvironmentError(f"Environment variable {var_name} is not set.")
+    return value
+
+# Configuration
+solana_client = Client("https://api.mainnet-beta.solana.com")
+trading_account = Account()  # Replace with secure loading of your private key/account details
+phantom_wallet_address = get_env_variable("PHANTOM_WALLET_ADDRESS")  # Ensure this is set securely
+owned_tokens = {}  # Dictionary to track purchased tokens and their purchase prices and amounts
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Fetch SOL price from an external API
+def fetch_sol_price():
+    try:
+        response = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", timeout=5)
+        if response.status_code == 200 and 'solana' in response.json():
+            return response.json()['solana']['usd']
+        else:
+            logging.warning("Failed to fetch SOL price. Using last known value.")
+            return 25.0  # Fallback value
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error fetching SOL price: {e}")
+        return 25.0  # Fallback value
+
+# Define Token Sniffer API or endpoint (mock URL)
+def check_token_safety(token_address):
+    try:
+        response = requests.get(f"https://tokensniffer.com/api/v1/check/{token_address}", timeout=5)
+        if response.status_code == 200 and response.json() is not None:
+            data = response.json()
+            return data.get("is_safe", False), data.get("score", 0), data.get("performance", 0)  # Include performance metric
+        else:
+            logging.warning(f"Failed to verify token safety: {response.status_code}")
+            return False, 0, 0
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error during token safety check: {e}")
+        return False, 0, 0
+
+# Basic trading logic for new coins
+def get_new_tokens():
+    # Replace with an actual API call to dynamically fetch new tokens
+    new_tokens = ["TOKEN_ADDRESS_1", "TOKEN_ADDRESS_2"]
+    return new_tokens
+
+# Risk management functions
+# Adjust trade amounts based on a balanced strategy for profitability
+# Minimum trade amount: $10, Maximum trade amount: $30
+def calculate_trade_amount(score):
+    return max(10, min(30, score / 1.5))  # Adjusted scaling logic for optimized trading
+
+# Technical indicators (e.g., Simple Moving Average for further enhancements)
+def calculate_sma(prices, period):
+    if len(prices) < period:
+        return sum(prices) / len(prices)
+    return sum(prices[-period:]) / period
+
+# Trading logic with advanced strategies
+# Do not purchase tokens that have already reached a certain performance threshold
+MAX_PERFORMANCE_THRESHOLD = 150  # Example threshold for filtering out high-performing tokens
+
+def trade_new_tokens():
+    global owned_tokens
+    sol_price_usd = fetch_sol_price()  # Get the latest SOL price
+
+    new_tokens = get_new_tokens()
+    for token in new_tokens:
+        is_safe, score, performance = check_token_safety(token)
+        if is_safe and performance < MAX_PERFORMANCE_THRESHOLD:
+            logging.info(f"Token {token} is safe with a score of {score} and performance of {performance}. Proceeding to trade.")
+            try:
+                trade_amount_usd = calculate_trade_amount(score)
+                trade_amount_sol = trade_amount_usd / sol_price_usd
+
+                logging.info(f"Buying ${trade_amount_usd:.2f} worth of token {token} (~{trade_amount_sol:.4f} SOL)")
+                transaction = Transaction()
+                # transaction.add(...)  # Add specific instructions for the buy order
+                # solana_client.send_transaction(transaction, trading_account)
+
+                owned_tokens[token] = {
+                    'purchase_price_usd': trade_amount_usd,
+                    'amount_sol': trade_amount_sol,
+                    'score': score,
+                    'trailing_stop_price': trade_amount_usd * 1.1
+                }
+            except Exception as e:
+                logging.error(f"Failed to trade token {token}: {e}")
+        elif performance >= MAX_PERFORMANCE_THRESHOLD:
+            logging.info(f"Token {token} has a performance of {performance}, which exceeds the threshold. Skipping.")
+        else:
+            logging.warning(f"Token {token} is flagged as unsafe. Skipping.")
+
+# Sales logic with trailing stop-loss and partial sell strategies
+def sell_tokens():
+    global owned_tokens
+    sol_price_usd = fetch_sol_price()  # Get the latest SOL price
+
+    for token, data in list(owned_tokens.items()):
+        purchase_price_usd = data['purchase_price_usd']
+        amount_sol = data['amount_sol']
+        score = data['score']
+        current_price = sol_price_usd * 1.1  # Placeholder for current price fetching logic
+        profit_threshold = purchase
